@@ -1,44 +1,5 @@
-const CACHE_NAME = 'axys-flow-v1';
-const ASSETS = [
-  './',
-  './index.html',
-  './app.js',
-  './manifest.json',
-  './icon-192.png'
-];
+// ATENÇÃO: Substitua pelas suas chaves reais do projeto Supabase.
+const SUPABASE_URL = https://hdgoghefokrpukmefsaz.supabase.co;
+const SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkZ29naGVmb2tycHVrbWVmc2F6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk5NTgxMTksImV4cCI6MjA5NTUzNDExOX0.eDUGsfEFYVV_Dpjbo-MwXaP5NGJuPVSmv0ygsl7A2CY;
 
-self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
-  );
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
-      );
-    })
-  );
-  self.clients.claim();
-});
-
-self.addEventListener('fetch', (e) => {
-  // Only cache GET requests
-  if (e.request.method !== 'GET') return;
-  // Ignore API calls to Supabase
-  if (e.request.url.includes('supabase.co')) return;
-
-  e.respondWith(
-    caches.match(e.request).then((res) => {
-      return res || fetch(e.request).then(fetchRes => {
-        return caches.open(CACHE_NAME).then(cache => {
-          cache.put(e.request, fetchRes.clone());
-          return fetchRes;
-        });
-      });
-    }).catch(() => caches.match('./index.html'))
-  );
-});
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
