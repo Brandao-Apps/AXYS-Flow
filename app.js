@@ -433,7 +433,137 @@ async function toggleEliteBlock(blockName) {
     await saveStudyProgress();
     if(currentCycle) selectCycle(currentCycle); renderCalendar();
 }
+let localUserXp = 0;
 
+document.addEventListener('DOMContentLoaded', () => {
+    atualizarDataVisual();
+    carregarTarefas();
+    document.getElementById('userXpDisplay').textContent = localUserXp;
+});
+
+function atualizarDataVisual() {
+    const dataOpcoes = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    const dataFormatada = new Date().toLocaleDateString('pt-BR', dataOpcoes);
+    document.getElementById('currentDate').textContent = dataFormatada.charAt(0).toUpperCase() + dataFormatada.slice(1);
+}
+
+async function concluirTarefa(taskId, btnElement) {
+    btnElement.disabled = true;
+    const originalText = btnElement.innerHTML;
+    btnElement.innerHTML = `<span class="animate-pulse">...</span>`;
+    
+    try {
+        let tarefa = await buscarTarefa(taskId); 
+        if (!tarefa) throw new Error("Tarefa não encontrada.");
+
+        const xpGanho = tarefa.xp_value || 10;
+        await adicionarXpUsuario(xpGanho);
+        
+        if (tarefa.recurrence_type && tarefa.recurrence_type !== 'none') {
+            let novaData = new Date(tarefa.due_date);
+            if (tarefa.recurrence_type === 'diaria') novaData.setDate(novaData.getDate() + 1);
+            else if (tarefa.recurrence_type === 'semanal') novaData.setDate(novaData.getDate() + 7);
+            else if (tarefa.recurrence_type === 'mensal') novaData.setMonth(novaData.getMonth() + 1);
+
+            await atualizarDataTarefaNoSupabase(taskId, novaData);
+        } else {
+            await arquivarTarefaNoSupabase(taskId);
+        }
+
+        mostrarAnimacaoXP(xpGanho);
+        
+        const liElement = btnElement.closest('li');
+        liElement.style.opacity = '0';
+        liElement.style.transform = 'translateX(20px)';
+        setTimeout(() => {
+            liElement.remove();
+            verificarListaVazia();
+        }, 300);
+
+    } catch (error) {
+        console.error(error);
+        btnElement.disabled = false;
+        btnElement.innerHTML = originalText;
+    }
+}
+
+async function carregarTarefas() {
+    const list = document.getElementById('taskList');
+    const emptyState = document.getElementById('emptyState');
+    
+    try {
+        const { data, error } = await supabase
+            .from('tasks').select('*').eq('is_completed', false).order('due_date', { ascending: true });
+            
+        if (error) throw error;
+        list.innerHTML = ''; 
+        if (data && data.length > 0) data.forEach(task => renderizarTarefaNaTela(task));
+        else { list.appendChild(emptyState); emptyState.textContent = "Nenhuma tarefa para hoje. Descanso merecido!"; }
+    } catch (e) {
+        list.innerHTML = '';
+        const mockTasks = [
+            { id: 1, title: 'Estudar TypeScript', xp_value: 150, recurrence_type: 'none', due_date: new Date().toISOString() },
+            { id: 2, title: 'Revisão Financeira', xp_value: 50, recurrence_type: 'semanal', due_date: new Date().toISOString() }
+        ];
+        mockTasks.forEach(task => renderizarTarefaNaTela(task));
+    }
+}
+
+function renderizarTarefaNaTela(task) {
+    const list = document.getElementById('taskList');
+    const li = document.createElement('li');
+    const iconeRecorrencia = task.recurrence_type !== 'none' ? `<span class="text-accent-500 ml-1">↺</span>` : '';
+
+    li.className = "bg-dark-800 p-4 rounded-xl border border-dark-700 flex justify-between items-center group transition-all duration-300";
+    li.innerHTML = `
+        <div class="flex-1">
+            <h3 class="text-white font-medium text-sm flex items-center">${task.title} ${iconeRecorrencia}</h3>
+            <span class="text-xs text-accent-500 font-semibold mt-1 inline-block">${task.xp_value} XP</span>
+        </div>
+        <button onclick="concluirTarefa(${task.id}, this)" class="w-8 h-8 rounded-full border-2 border-dark-600 flex items-center justify-center hover:bg-accent-500 hover:text-dark-900 transition-all text-transparent hover:text-dark-900">
+            ✓
+        </button>
+    `;
+    list.appendChild(li);
+}
+
+async function buscarTarefa(id) { return { id: id, xp_value: 50, recurrence_type: 'diaria', due_date: new Date().toISOString() }; }
+async function atualizarDataTarefaNoSupabase(id, novaData) { console.log(`Atualizou data para ${novaData}`); }
+async function arquivarTarefaNoSupabase(id) { console.log(`Concluiu ${id}`); }
+
+async function adicionarXpUsuario(xp) {
+    localUserXp += xp;
+    document.getElementById('userXpDisplay').textContent = localUserXp;
+}
+
+function mostrarAnimacaoXP(xp) {
+    const overlay = document.getElementById('xpAnimation');
+    const popup = document.getElementById('xpPopup');
+    document.getElementById('xpGainedText').textContent = `+${xp} XP`;
+    
+    overlay.classList.remove('opacity-0', 'pointer-events-none');
+    popup.classList.remove('scale-90'); popup.classList.add('scale-100');
+    
+    setTimeout(() => {
+        overlay.classList.add('opacity-0');
+        popup.classList.remove('scale-100'); popup.classList.add('scale-90');
+        setTimeout(() => overlay.classList.add('pointer-events-none'), 300);
+    }, 1500);
+}
+
+function verificarListaVazia() {
+    const list = document.getElementById('taskList');
+    if (list.querySelectorAll('li:not(#emptyState)').length === 0) {
+        list.innerHTML = `<li class="text-center text-gray-500 py-8 text-sm italic" id="emptyState">Tudo limpo!</li>`;
+    }
+}
+
+function criarTarefaDeTeste() {
+    const titulo = document.getElementById('novaTarefaTitle').value;
+    if(!titulo) return;
+    renderizarTarefaNaTela({ id: Date.now(), title: titulo, xp_value: 50, recurrence_type: 'none', due_date: new Date().toISOString() });
+    document.getElementById('modalNovaTarefa').classList.add('hidden');
+}
 function renderVault() {
     document.getElementById('vault-income').textContent = fmtMoney(profile?.monthly_income || 0);
     
